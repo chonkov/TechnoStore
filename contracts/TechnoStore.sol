@@ -3,6 +3,7 @@ pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 
 /*
 
@@ -39,6 +40,10 @@ uint constant AMOUNT = 1;
 
 */
 
+interface IERC20P is IERC20, IERC20Permit {
+
+}
+
 error Library__CallerHasApprovedInsufficientAmount();
 error Library__InsufficientAmount();
 error Library__ProductAlreadyBought();
@@ -57,6 +62,7 @@ library Library {
 
     function addProduct(
         Product storage product,
+        string[] storage products,
         string calldata _product,
         uint amount,
         uint price
@@ -67,6 +73,7 @@ library Library {
         } else {
             product.quantityOfProduct[_product] = amount;
             product.priceOf[_product] = price;
+            products.push(_product);
         }
     }
 
@@ -74,15 +81,17 @@ library Library {
         Product storage product,
         string calldata _product,
         address _customer,
-        IERC20 token
+        IERC20P token,
+        bytes memory signature
     ) public {
-        // Check if the store contract(caller) has any allowance in order to use 'transferFrom'
-        if (
-            token.allowance(msg.sender, address(this)) <
-            product.priceOf[_product]
-        ) {
-            revert Library__CallerHasApprovedInsufficientAmount();
-        }
+        // Check if the store contract(caller) has any allowance in order to use 'transferFrom' - REMOVE THIS CONDITION
+        // NOT NEEDED SINCE USING PERMITS
+        // if (
+        //     token.allowance(msg.sender, address(this)) <
+        //     product.priceOf[_product]
+        // ) {
+        //     revert Library__CallerHasApprovedInsufficientAmount();
+        // }
         // Check if there is at least one product
         if (product.quantityOfProduct[_product] == 0) {
             revert Library__InsufficientAmount();
@@ -96,7 +105,36 @@ library Library {
         product.buyers[_product].push(msg.sender);
         product.boughtAt[_product][_customer] = block.number;
 
-        // TransferFrom:
+        if (signature.length != 65) {
+            revert(); // add custom error
+        }
+
+        uint8 v;
+        bytes32 r;
+        bytes32 s;
+        assembly {
+            r := mload(add(signature, 0x20))
+            s := mload(add(signature, 0x40))
+            v := byte(0, mload(add(signature, 0x60)))
+        }
+
+        // Permit => TransferFrom:
+        // address owner,
+        // address spender,
+        // uint256 value,
+        // uint256 deadline,
+        // uint8 v,
+        // bytes32 r,
+        // bytes32 s
+        token.permit(
+            msg.sender,
+            address(this),
+            product.priceOf[_product],
+            block.timestamp + 120,
+            v,
+            r,
+            s
+        );
         token.transferFrom(
             msg.sender,
             address(this),
@@ -108,7 +146,7 @@ library Library {
         Product storage product,
         string calldata _product,
         address _customer,
-        IERC20 token
+        IERC20P token
     ) public {
         // The block.number can be checked and if it is == 0 - revert
         if (product.boughtAt[_product][_customer] == 0) {
@@ -166,13 +204,13 @@ contract TechnoStore is Ownable {
 
     using Library for Library.Product;
 
-    IERC20 immutable token;
+    IERC20P public immutable token;
 
     string[] public products;
     Library.Product product;
 
     constructor(address _token) {
-        token = IERC20(_token);
+        token = IERC20P(_token);
     }
 
     function addProduct(
@@ -180,15 +218,14 @@ contract TechnoStore is Ownable {
         uint quantity,
         uint price
     ) external onlyOwner {
-        product.addProduct(_product, quantity, price);
-        products.push(_product);
+        product.addProduct(products, _product, quantity, price);
 
         emit TechnoStore__ProductAdded(_product, quantity);
     }
 
-    function buyProduct(uint i) external {
+    function buyProduct(uint i, bytes calldata signature) external {
         string memory _product = products[i];
-        product.buyProduct(_product, msg.sender, token);
+        product.buyProduct(_product, msg.sender, token, signature);
 
         emit TechnoStore__ProductBought(_product, msg.sender);
     }
@@ -198,6 +235,47 @@ contract TechnoStore is Ownable {
         product.refundProduct(_product, msg.sender, token);
 
         emit TechnoStore__ProductRefunded(_product, msg.sender);
+    }
+
+    function getPermitHash(
+        uint256 value,
+        uint256 deadline
+    ) public view returns (bytes32) {
+        return
+            keccak256(
+                abi.encodePacked(
+                    "\x19\x01",
+                    token.DOMAIN_SEPARATOR(),
+                    keccak256(
+                        abi.encode(
+                            keccak256(
+                                "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+                            ),
+                            msg.sender,
+                            address(this),
+                            value,
+                            token.nonces(msg.sender),
+                            block.timestamp + deadline
+                        )
+                    )
+                )
+            );
+    }
+
+    function getEthSignedMessageHash(
+        bytes32 _messageHash
+    ) public pure returns (bytes32) {
+        /*
+        Signature is produced by signing a keccak256 hash with the following format:
+        "\x19Ethereum Signed Message\n" + len(msg) + msg
+        */
+        return
+            keccak256(
+                abi.encodePacked(
+                    "\x19Ethereum Signed Message:\n32",
+                    _messageHash
+                )
+            );
     }
 
     /*
