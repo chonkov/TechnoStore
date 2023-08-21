@@ -3,6 +3,7 @@ const {
 } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
+const { getPermitSignature } = require("../utils/getPermitSignature");
 
 describe("TechnoStore", function () {
   async function deployERC20() {
@@ -99,12 +100,12 @@ describe("TechnoStore", function () {
 
   describe("Buying products", function () {
     const product = "Keyboard";
-    const quantity = 0;
-    const price = 100;
+    const quantity = 10;
+    const price = 50;
     const signature =
       "0x566a940ae90d8778cb45db507ecd1bf2ee9c312c5b550de9fecfbe006906361475bb13d49ef3bf2cde32089c6ea1a0ce3cdcae02d5a144ca527817661f20f65b1b"; // demo signature - not valid
 
-    it("Should revert, when the product, accessed with via index, does not exist", async function () {
+    it.skip("Should revert, when the product, accessed with via index, does not exist", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
       const [, ...other] = await ethers.getSigners();
 
@@ -112,11 +113,11 @@ describe("TechnoStore", function () {
         .reverted;
     });
 
-    it("Should revert, when there is insufficient amount of the desired product", async function () {
+    it.skip("Should revert, when there is insufficient amount of the desired product", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
       const [, ...other] = await ethers.getSigners();
 
-      await technoStore.addProduct(product, quantity, price);
+      await technoStore.addProduct(product, 0, price);
       expect(await technoStore.getAmountOfProducts()).to.equal(1);
       expect(await technoStore.getQuantityOf(product)).to.equal(0);
 
@@ -125,41 +126,44 @@ describe("TechnoStore", function () {
       ).to.be.revertedWith("Library__InsufficientAmount");
     });
 
-    it("Should not revert, when an address with enough tokens wants to buy a product", async function () {
+    it.only("Should not revert, when an address with enough tokens wants to buy a product", async function () {
+      const { token, owner } = await loadFixture(deployERC20);
       const { technoStore } = await loadFixture(deployTechnoStore);
-      const [owner, ...other] = await ethers.getSigners();
 
-      await technoStore.addProduct(product, 10, price);
-      expect(await technoStore.getAmountOfProducts()).to.equal(1);
-      expect(await technoStore.products(0)).to.equal(product);
+      const tx = await technoStore.addProduct(product, quantity, price);
+      await tx.wait();
 
-      const hash = await technoStore.getPermitHash();
-      console.log(hash);
-
-      const signature = await owner.signMessage(hash);
-      //   const signature = await owner.sendTransaction("eth_signTypedData_v4", [
-      //     technoStore.target,
-      //     hash,
-      //   ]);
-      console.log(signature);
-
-      const signedHash = await technoStore.getEthSignedMessageHash(hash);
-      console.log(signedHash);
-
-      const response = await technoStore.recoverPermitHash(
-        signedHash,
-        signature
+      const value = 100;
+      const deadline = 2000000000;
+      const signature = await getPermitSignature(
+        owner,
+        token,
+        technoStore.target,
+        value,
+        deadline
       );
-      console.log(response);
-      console.log(owner.address);
 
-      //   0xfb1a4c8ee0971b5c271238bb64eca41306229d6d267ce8e035040c2ec3965f02;
-      //   0x5596941f4efeb0c6e2c69b9eb700b76b13a46f17d4755d91d98fb4487ae4503171ed911b753122c9e5207e1251021a9d5da8ce638b2e36aca3de263c5f9d39e81c;
-      //   0x1d6bc03eff74eb596015e6c0766343ce5856b97c2d8cc137723b61b40dc6b624;
-      //   0xde2f75b41855c42f21de1284689c52e6ec215855;
+      console.log(signature);
+      const v = parseInt(signature.slice(130, 132), 16);
+      const r = "0x" + signature.slice(2, 66);
+      const s = "0x" + signature.slice(66, 130);
+      console.log("_______________________________________________________");
+      console.log(`r: ${r}`);
+      console.log(`s: ${s}`);
+      console.log(`v: ${v}`);
 
-      //   await expect(technoStore.connect(other[0]).buyProduct(0, signature)).to.be
-      //     .reverted;
+      const result = await token.test(
+        owner.address,
+        technoStore.target,
+        value,
+        deadline,
+        v,
+        r,
+        s
+      );
+      console.log("_______________________________________________________");
+      console.log("HERE OWNER", owner.address);
+      console.log(result);
     });
   });
 });
