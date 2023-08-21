@@ -45,8 +45,6 @@ interface IERC20P is IERC20, IERC20Permit {
 }
 
 error Library__CallerHasApprovedInsufficientAmount();
-error Library__InsufficientAmount();
-error Library__ProductAlreadyBought();
 error Library__ProductNotBought();
 error Library__RefundExpired();
 error Library__InvalidSignatureLength();
@@ -83,6 +81,8 @@ library Library {
         string calldata _product,
         address _customer,
         IERC20P token,
+        uint amount,
+        uint deadline,
         uint8 v,
         bytes32 r,
         bytes32 s
@@ -93,38 +93,23 @@ library Library {
 
         // Check if this customer(msg.sender/tx.origin) has already bought it
         if (product.boughtAt[_product][_customer] > 0) {
-            revert Library__ProductAlreadyBought();
+            revert("Library__ProductAlreadyBought");
         }
 
         product.quantityOfProduct[_product] -= 1;
         product.buyers[_product].push(msg.sender);
         product.boughtAt[_product][_customer] = block.number;
 
-        // if (signature.length != 65) {
-        //     revert Library__InvalidSignatureLength();
-        // }
-        // uint8 v;
-        // bytes32 r;
-        // bytes32 s;
-        // assembly {
-        //     r := mload(add(signature, 0x20))
-        //     s := mload(add(signature, 0x40))
-        //     v := byte(0, mload(add(signature, 0x60)))
-        // }
-
-        uint value = 100;
-        uint deadline = 2000000000;
-
         token.permit(
             msg.sender,
             address(this),
-            value, //product.priceOf[_product],
+            amount, // amount >= product.priceOf[_product],
             deadline,
             v,
             r,
             s
         );
-        token.transferFrom(msg.sender, address(this), value);
+        token.transferFrom(msg.sender, address(this), amount);
     }
 
     function refundProduct(
@@ -208,9 +193,25 @@ contract TechnoStore is Ownable {
         emit TechnoStore__ProductAdded(_product, quantity);
     }
 
-    function buyProduct(uint i, uint8 v, bytes32 r, bytes32 s) external {
+    function buyProduct(
+        uint i,
+        uint amount,
+        uint deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
         string memory _product = products[i];
-        product.buyProduct(_product, msg.sender, token, v, r, s);
+        product.buyProduct(
+            _product,
+            msg.sender,
+            token,
+            amount,
+            deadline,
+            v,
+            r,
+            s
+        );
 
         emit TechnoStore__ProductBought(_product, msg.sender);
     }
@@ -222,63 +223,63 @@ contract TechnoStore is Ownable {
         emit TechnoStore__ProductRefunded(_product, msg.sender);
     }
 
-    function getPermitHash(
-        uint256 value,
-        uint256 deadline
-    ) public view returns (bytes32) {
-        return
-            keccak256(
-                abi.encodePacked(
-                    "\x19\x01",
-                    token.DOMAIN_SEPARATOR(),
-                    keccak256(
-                        abi.encode(
-                            keccak256(
-                                "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
-                            ),
-                            msg.sender,
-                            address(this),
-                            value,
-                            token.nonces(msg.sender),
-                            deadline
-                        )
-                    )
-                )
-            );
-    }
+    // function getPermitHash(
+    //     uint256 value,
+    //     uint256 deadline
+    // ) public view returns (bytes32) {
+    //     return
+    //         keccak256(
+    //             abi.encodePacked(
+    //                 "\x19\x01",
+    //                 token.DOMAIN_SEPARATOR(),
+    //                 keccak256(
+    //                     abi.encode(
+    //                         keccak256(
+    //                             "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
+    //                         ),
+    //                         msg.sender,
+    //                         address(this),
+    //                         value,
+    //                         token.nonces(msg.sender),
+    //                         deadline
+    //                     )
+    //                 )
+    //             )
+    //         );
+    // }
 
-    function recoverPermitHash(
-        bytes32 hash,
-        bytes memory signature
-    ) public pure returns (address signer) {
-        uint8 v;
-        bytes32 r;
-        bytes32 s;
+    // function recoverPermitHash(
+    //     bytes32 hash,
+    //     bytes memory signature
+    // ) public pure returns (address signer) {
+    //     uint8 v;
+    //     bytes32 r;
+    //     bytes32 s;
 
-        assembly {
-            r := mload(add(signature, 0x20))
-            s := mload(add(signature, 0x40))
-            v := byte(0, mload(add(signature, 0x60)))
-        }
+    //     assembly {
+    //         r := mload(add(signature, 0x20))
+    //         s := mload(add(signature, 0x40))
+    //         v := byte(0, mload(add(signature, 0x60)))
+    //     }
 
-        signer = ecrecover(hash, v, r, s);
-    }
+    //     signer = ecrecover(hash, v, r, s);
+    // }
 
-    function getEthSignedMessageHash(
-        bytes32 _messageHash
-    ) public pure returns (bytes32) {
-        /*
-        Signature is produced by signing a keccak256 hash with the following format:
-        "\x19Ethereum Signed Message\n" + len(msg) + msg
-        */
-        return
-            keccak256(
-                abi.encodePacked(
-                    "\x19Ethereum Signed Message:\n32",
-                    _messageHash
-                )
-            );
-    }
+    // function getEthSignedMessageHash(
+    //     bytes32 _messageHash
+    // ) public pure returns (bytes32) {
+    //     /*
+    //     Signature is produced by signing a keccak256 hash with the following format:
+    //     "\x19Ethereum Signed Message\n" + len(msg) + msg
+    //     */
+    //     return
+    //         keccak256(
+    //             abi.encodePacked(
+    //                 "\x19Ethereum Signed Message:\n32",
+    //                 _messageHash
+    //             )
+    //         );
+    // }
 
     /*
 
