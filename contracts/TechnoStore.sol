@@ -49,6 +49,7 @@ error Library__InsufficientAmount();
 error Library__ProductAlreadyBought();
 error Library__ProductNotBought();
 error Library__RefundExpired();
+error Library__InvalidSignatureLength();
 
 library Library {
     struct Product {
@@ -82,7 +83,9 @@ library Library {
         string calldata _product,
         address _customer,
         IERC20P token,
-        bytes memory signature
+        uint8 v,
+        bytes32 r,
+        bytes32 s
     ) public {
         // Check if the store contract(caller) has any allowance in order to use 'transferFrom' - REMOVE THIS CONDITION
         // NOT NEEDED SINCE USING PERMITS
@@ -93,9 +96,18 @@ library Library {
         //     revert Library__CallerHasApprovedInsufficientAmount();
         // }
         // Check if there is at least one product
+        // require(
+        //     product.quantityOfProduct[_product] > 0,
+        //     "Library__InsufficientAmount"
+        // ); // how to catch custom errors
+        // if (product.quantityOfProduct[_product] == 0) {
+        //     revert Library__InsufficientAmount();
+        // }
+
         if (product.quantityOfProduct[_product] == 0) {
-            revert Library__InsufficientAmount();
+            revert("Library__InsufficientAmount");
         }
+
         // Check if this customer(msg.sender/tx.origin) has already bought it
         if (product.boughtAt[_product][_customer] > 0) {
             revert Library__ProductAlreadyBought();
@@ -105,18 +117,18 @@ library Library {
         product.buyers[_product].push(msg.sender);
         product.boughtAt[_product][_customer] = block.number;
 
-        if (signature.length != 65) {
-            revert(); // add custom error
-        }
+        // if (signature.length != 65) {
+        //     revert Library__InvalidSignatureLength();
+        // }
 
-        uint8 v;
-        bytes32 r;
-        bytes32 s;
-        assembly {
-            r := mload(add(signature, 0x20))
-            s := mload(add(signature, 0x40))
-            v := byte(0, mload(add(signature, 0x60)))
-        }
+        // uint8 v;
+        // bytes32 r;
+        // bytes32 s;
+        // assembly {
+        //     r := mload(add(signature, 0x20))
+        //     s := mload(add(signature, 0x40))
+        //     v := byte(0, mload(add(signature, 0x60)))
+        // }
 
         // Permit => TransferFrom:
         // address owner,
@@ -126,20 +138,23 @@ library Library {
         // uint8 v,
         // bytes32 r,
         // bytes32 s
+
+        // msg.sender,
+        //                     address(this),
+        //                     100,
+        //                     token.nonces(msg.sender),
+        //                     2000000000
+
         token.permit(
             msg.sender,
             address(this),
-            product.priceOf[_product],
-            block.timestamp + 120,
+            100, //product.priceOf[_product],
+            2000000000,
             v,
             r,
             s
         );
-        token.transferFrom(
-            msg.sender,
-            address(this),
-            product.priceOf[_product]
-        );
+        // token.transferFrom(msg.sender, address(this), 100);
     }
 
     function refundProduct(
@@ -223,9 +238,9 @@ contract TechnoStore is Ownable {
         emit TechnoStore__ProductAdded(_product, quantity);
     }
 
-    function buyProduct(uint i, bytes calldata signature) external {
+    function buyProduct(uint i, uint8 v, bytes32 r, bytes32 s) external {
         string memory _product = products[i];
-        product.buyProduct(_product, msg.sender, token, signature);
+        product.buyProduct(_product, msg.sender, token, v, r, s);
 
         emit TechnoStore__ProductBought(_product, msg.sender);
     }
@@ -237,10 +252,15 @@ contract TechnoStore is Ownable {
         emit TechnoStore__ProductRefunded(_product, msg.sender);
     }
 
-    function getPermitHash(
-        uint256 value,
-        uint256 deadline
-    ) public view returns (bytes32) {
+    function getPermitHash()
+        public
+        view
+        returns (
+            // uint256 value,
+            // uint256 deadline
+            bytes32
+        )
+    {
         return
             keccak256(
                 abi.encodePacked(
@@ -253,13 +273,31 @@ contract TechnoStore is Ownable {
                             ),
                             msg.sender,
                             address(this),
-                            value,
+                            100,
                             token.nonces(msg.sender),
-                            block.timestamp + deadline
+                            2000000000
                         )
                     )
                 )
             );
+    }
+
+    function recoverPermitHash(
+        bytes32 hash,
+        bytes memory signature
+    ) public pure returns (address signer) {
+        uint8 v;
+        bytes32 r;
+        bytes32 s;
+
+        assembly {
+            r := mload(add(signature, 0x20))
+            s := mload(add(signature, 0x40))
+            v := byte(0, mload(add(signature, 0x60)))
+        }
+
+        signer = ecrecover(hash, v, r, s);
+        // require(signer == owner, "ERC20Permit: invalid signature");
     }
 
     function getEthSignedMessageHash(
