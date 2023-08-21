@@ -110,6 +110,15 @@ describe("TechnoStore", function () {
       expect(await technoStore.getQuantityOf(product)).to.equal(quantity * 2);
     });
 
+    it("Should revert, when the NOT the owner calls it", async function () {
+      const { technoStore } = await loadFixture(deployTechnoStore);
+      const [owner, ...other] = await ethers.getSigners();
+
+      await expect(
+        technoStore.connect(other[0]).addProduct("Laptop", 5, 100)
+      ).to.be.revertedWith("Ownable: caller is not the owner");
+    });
+
     it("Should emit an event", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
 
