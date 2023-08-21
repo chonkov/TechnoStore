@@ -11,7 +11,7 @@ const getPermitSignature = async (signer, token, spender, value, deadline) => {
       name,
       version,
       chainId,
-      verifyingContract: token.address,
+      verifyingContract: token.target,
     },
     {
       Permit: [
