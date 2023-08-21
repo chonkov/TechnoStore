@@ -87,23 +87,6 @@ library Library {
         bytes32 r,
         bytes32 s
     ) public {
-        // Check if the store contract(caller) has any allowance in order to use 'transferFrom' - REMOVE THIS CONDITION
-        // NOT NEEDED SINCE USING PERMITS
-        // if (
-        //     token.allowance(msg.sender, address(this)) <
-        //     product.priceOf[_product]
-        // ) {
-        //     revert Library__CallerHasApprovedInsufficientAmount();
-        // }
-        // Check if there is at least one product
-        // require(
-        //     product.quantityOfProduct[_product] > 0,
-        //     "Library__InsufficientAmount"
-        // ); // how to catch custom errors
-        // if (product.quantityOfProduct[_product] == 0) {
-        //     revert Library__InsufficientAmount();
-        // }
-
         if (product.quantityOfProduct[_product] == 0) {
             revert("Library__InsufficientAmount");
         }
@@ -120,7 +103,6 @@ library Library {
         // if (signature.length != 65) {
         //     revert Library__InvalidSignatureLength();
         // }
-
         // uint8 v;
         // bytes32 r;
         // bytes32 s;
@@ -130,31 +112,19 @@ library Library {
         //     v := byte(0, mload(add(signature, 0x60)))
         // }
 
-        // Permit => TransferFrom:
-        // address owner,
-        // address spender,
-        // uint256 value,
-        // uint256 deadline,
-        // uint8 v,
-        // bytes32 r,
-        // bytes32 s
-
-        // msg.sender,
-        //                     address(this),
-        //                     100,
-        //                     token.nonces(msg.sender),
-        //                     2000000000
+        uint value = 100;
+        uint deadline = 2000000000;
 
         token.permit(
             msg.sender,
             address(this),
-            100, //product.priceOf[_product],
-            2000000000,
+            value, //product.priceOf[_product],
+            deadline,
             v,
             r,
             s
         );
-        // token.transferFrom(msg.sender, address(this), 100);
+        token.transferFrom(msg.sender, address(this), value);
     }
 
     function refundProduct(
@@ -252,15 +222,10 @@ contract TechnoStore is Ownable {
         emit TechnoStore__ProductRefunded(_product, msg.sender);
     }
 
-    function getPermitHash()
-        public
-        view
-        returns (
-            // uint256 value,
-            // uint256 deadline
-            bytes32
-        )
-    {
+    function getPermitHash(
+        uint256 value,
+        uint256 deadline
+    ) public view returns (bytes32) {
         return
             keccak256(
                 abi.encodePacked(
@@ -273,9 +238,9 @@ contract TechnoStore is Ownable {
                             ),
                             msg.sender,
                             address(this),
-                            100,
+                            value,
                             token.nonces(msg.sender),
-                            2000000000
+                            deadline
                         )
                     )
                 )
@@ -297,7 +262,6 @@ contract TechnoStore is Ownable {
         }
 
         signer = ecrecover(hash, v, r, s);
-        // require(signer == owner, "ERC20Permit: invalid signature");
     }
 
     function getEthSignedMessageHash(
