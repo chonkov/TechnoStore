@@ -44,11 +44,6 @@ interface IERC20P is IERC20, IERC20Permit {
 
 }
 
-error Library__CallerHasApprovedInsufficientAmount();
-error Library__ProductNotBought();
-error Library__RefundExpired();
-error Library__InvalidSignatureLength();
-
 library Library {
     struct Product {
         mapping(string => uint) quantityOfProduct;
@@ -120,10 +115,10 @@ library Library {
     ) public {
         // The block.number can be checked and if it is == 0 - revert
         if (product.boughtAt[_product][_customer] == 0) {
-            revert Library__ProductNotBought();
+            revert("Library__ProductNotBought");
         }
         if (block.number - product.boughtAt[_product][_customer] > 100) {
-            revert Library__RefundExpired();
+            revert("Library__RefundExpired");
         }
 
         product.quantityOfProduct[_product] += 1;
@@ -222,64 +217,6 @@ contract TechnoStore is Ownable {
 
         emit TechnoStore__ProductRefunded(_product, msg.sender);
     }
-
-    // function getPermitHash(
-    //     uint256 value,
-    //     uint256 deadline
-    // ) public view returns (bytes32) {
-    //     return
-    //         keccak256(
-    //             abi.encodePacked(
-    //                 "\x19\x01",
-    //                 token.DOMAIN_SEPARATOR(),
-    //                 keccak256(
-    //                     abi.encode(
-    //                         keccak256(
-    //                             "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
-    //                         ),
-    //                         msg.sender,
-    //                         address(this),
-    //                         value,
-    //                         token.nonces(msg.sender),
-    //                         deadline
-    //                     )
-    //                 )
-    //             )
-    //         );
-    // }
-
-    // function recoverPermitHash(
-    //     bytes32 hash,
-    //     bytes memory signature
-    // ) public pure returns (address signer) {
-    //     uint8 v;
-    //     bytes32 r;
-    //     bytes32 s;
-
-    //     assembly {
-    //         r := mload(add(signature, 0x20))
-    //         s := mload(add(signature, 0x40))
-    //         v := byte(0, mload(add(signature, 0x60)))
-    //     }
-
-    //     signer = ecrecover(hash, v, r, s);
-    // }
-
-    // function getEthSignedMessageHash(
-    //     bytes32 _messageHash
-    // ) public pure returns (bytes32) {
-    //     /*
-    //     Signature is produced by signing a keccak256 hash with the following format:
-    //     "\x19Ethereum Signed Message\n" + len(msg) + msg
-    //     */
-    //     return
-    //         keccak256(
-    //             abi.encodePacked(
-    //                 "\x19Ethereum Signed Message:\n32",
-    //                 _messageHash
-    //             )
-    //         );
-    // }
 
     /*
 
