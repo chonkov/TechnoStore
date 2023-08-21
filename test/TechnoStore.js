@@ -43,6 +43,27 @@ describe("TechnoStore", function () {
     return { technoStore };
   }
 
+  async function computePermitSignature() {
+    const { token, owner } = await loadFixture(deployERC20);
+    const { technoStore } = await loadFixture(deployTechnoStore);
+
+    const amount = 100;
+    const deadline = 2000000000;
+    const signature = await getPermitSignature(
+      owner,
+      token,
+      technoStore.target,
+      amount,
+      deadline
+    );
+
+    const v = parseInt(signature.slice(130, 132), 16);
+    const r = "0x" + signature.slice(2, 66);
+    const s = "0x" + signature.slice(66, 130);
+
+    return { amount, deadline, signature, v, r, s };
+  }
+
   describe("Deployment", function () {
     it("Should set the right owner & token contract", async function () {
       const { token, owner } = await loadFixture(deployERC20);
@@ -102,19 +123,26 @@ describe("TechnoStore", function () {
     const product = "Keyboard";
     const quantity = 10;
     const price = 50;
-    const signature =
-      "0x566a940ae90d8778cb45db507ecd1bf2ee9c312c5b550de9fecfbe006906361475bb13d49ef3bf2cde32089c6ea1a0ce3cdcae02d5a144ca527817661f20f65b1b"; // demo signature - not valid
 
-    it.skip("Should revert, when the product, accessed with via index, does not exist", async function () {
+    it("Should revert, when the product, accessed with via index, does not exist", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
+      const { amount, deadline, v, r, s } = await loadFixture(
+        computePermitSignature
+      );
+
       const [, ...other] = await ethers.getSigners();
 
-      await expect(technoStore.connect(other[0]).buyProduct(0, signature)).to.be
-        .reverted;
+      await expect(
+        technoStore.connect(other[0]).buyProduct(0, amount, deadline, v, r, s)
+      ).to.be.reverted;
     });
 
-    it.skip("Should revert, when there is insufficient amount of the desired product", async function () {
+    it("Should revert, when there is insufficient amount of the desired product", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
+      const { amount, deadline, v, r, s } = await loadFixture(
+        computePermitSignature
+      );
+
       const [, ...other] = await ethers.getSigners();
 
       await technoStore.addProduct(product, 0, price);
@@ -122,48 +150,68 @@ describe("TechnoStore", function () {
       expect(await technoStore.getQuantityOf(product)).to.equal(0);
 
       await expect(
-        technoStore.connect(other[0]).buyProduct(0, signature)
+        technoStore.connect(other[0]).buyProduct(0, amount, deadline, v, r, s)
       ).to.be.revertedWith("Library__InsufficientAmount");
     });
 
-    it.only("Should not revert, when an address with enough tokens wants to buy a product", async function () {
+    it("Should not revert, when an address with enough tokens wants to buy a product", async function () {
       const { token, owner } = await loadFixture(deployERC20);
       const { technoStore } = await loadFixture(deployTechnoStore);
+      const { amount, deadline, v, r, s } = await loadFixture(
+        computePermitSignature
+      );
 
-      const tx = await technoStore.addProduct(product, quantity, price);
+      let tx = await technoStore.addProduct(product, quantity, price);
       await tx.wait();
 
-      const value = 100;
-      const deadline = 2000000000;
-      const signature = await getPermitSignature(
-        owner,
-        token,
-        technoStore.target,
-        value,
-        deadline
+      const initBalance = await token.balanceOf(owner.address);
+      const initQuantity = await technoStore.getQuantityOf(product);
+
+      tx = await technoStore.buyProduct(0, amount, deadline, v, r, s);
+      await tx.wait();
+
+      // Check all state changes that took place
+      expect(await token.balanceOf(owner.address)).to.be.equal(
+        initBalance - ethers.toBigInt(amount)
+      );
+      expect(await token.balanceOf(technoStore.target)).to.be.equal(amount);
+      expect(await technoStore.getQuantityOf(product)).to.be.equal(
+        initQuantity - ethers.toBigInt(1)
+      );
+      expect((await technoStore.getBuyersOf(product))[0]).to.be.equal(
+        owner.address
+      );
+      expect(await technoStore.boughtAt(product, owner.address)).to.be.equal(
+        tx.blockNumber
+      );
+    });
+
+    it("Should revert, when a customer tries to buy a product more than once", async function () {
+      const { technoStore } = await loadFixture(deployTechnoStore);
+      const { amount, deadline, v, r, s } = await loadFixture(
+        computePermitSignature
       );
 
-      console.log(signature);
-      const v = parseInt(signature.slice(130, 132), 16);
-      const r = "0x" + signature.slice(2, 66);
-      const s = "0x" + signature.slice(66, 130);
-      console.log("_______________________________________________________");
-      console.log(`r: ${r}`);
-      console.log(`s: ${s}`);
-      console.log(`v: ${v}`);
+      await technoStore.addProduct(product, quantity, price);
+      await technoStore.buyProduct(0, amount, deadline, v, r, s);
 
-      const result = await token.test(
-        owner.address,
-        technoStore.target,
-        value,
-        deadline,
-        v,
-        r,
-        s
+      await expect(
+        technoStore.buyProduct(0, amount, deadline, v, r, s)
+      ).to.be.revertedWith("Library__ProductAlreadyBought");
+    });
+
+    it("Should emit an event, when a product is bought", async function () {
+      const { technoStore } = await loadFixture(deployTechnoStore);
+      const { amount, deadline, v, r, s } = await loadFixture(
+        computePermitSignature
       );
-      console.log("_______________________________________________________");
-      console.log("HERE OWNER", owner.address);
-      console.log(result);
+      const [owner] = await ethers.getSigners(1);
+
+      await technoStore.addProduct(product, quantity, price);
+
+      expect(await technoStore.buyProduct(0, amount, deadline, v, r, s))
+        .to.emit(technoStore, "TechnoStore__ProductBought")
+        .withArgs(product, owner.address);
     });
   });
 });
