@@ -5,6 +5,10 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { getPermitSignature } = require("../utils/getPermitSignature");
 
+const product = "Keyboard";
+const quantity = 10;
+const price = 50;
+
 describe("TechnoStore", function () {
   async function deployERC20() {
     const [owner, ...other] = await ethers.getSigners();
@@ -81,10 +85,6 @@ describe("TechnoStore", function () {
   });
 
   describe("Adding products", function () {
-    const product = "Keyboard";
-    const quantity = 10;
-    const price = 100;
-
     it("Should successfully add a product to the store with its corresponding price and quantity", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
 
@@ -120,10 +120,6 @@ describe("TechnoStore", function () {
   });
 
   describe("Buying products", function () {
-    const product = "Keyboard";
-    const quantity = 10;
-    const price = 50;
-
     it("Should revert, when the product, accessed with via index, does not exist", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
       const { amount, deadline, v, r, s } = await loadFixture(
@@ -211,6 +207,61 @@ describe("TechnoStore", function () {
 
       expect(await technoStore.buyProduct(0, amount, deadline, v, r, s))
         .to.emit(technoStore, "TechnoStore__ProductBought")
+        .withArgs(product, owner.address);
+    });
+  });
+
+  describe("Refunding products", function () {
+    it("Should revert, when customer has not bought the product", async function () {
+      const { technoStore } = await loadFixture(deployTechnoStore);
+      const { amount, deadline, v, r, s } = await loadFixture(
+        computePermitSignature
+      );
+
+      await technoStore.addProduct(product, quantity, price);
+      await expect(technoStore.refundProduct(0)).to.be.revertedWith(
+        "Library__ProductNotBought"
+      );
+    });
+
+    it("Should revert, if the refund has expired", async function () {
+      const { technoStore } = await loadFixture(deployTechnoStore);
+      const { amount, deadline, v, r, s } = await loadFixture(
+        computePermitSignature
+      );
+
+      await technoStore.addProduct(product, quantity, price);
+      await technoStore.buyProduct(0, amount, deadline, v, r, s);
+
+      await network.provider.send("hardhat_mine", ["0x64"]);
+
+      await expect(technoStore.refundProduct(0)).to.be.revertedWith(
+        "Library__RefundExpired"
+      );
+    });
+
+    it("Should successfully return 80% of the initial price to, when there is insufficient amount of the desired product", async function () {
+      const { technoStore } = await loadFixture(deployTechnoStore);
+      const { amount, deadline, v, r, s } = await loadFixture(
+        computePermitSignature
+      );
+
+      await technoStore.addProduct(product, quantity, price);
+      await technoStore.buyProduct(0, amount, deadline, v, r, s);
+      await expect(technoStore.refundProduct(0)).to.not.be.reverted;
+    });
+
+    it("Should emit an event, if a refund is completed", async function () {
+      const { technoStore } = await loadFixture(deployTechnoStore);
+      const { amount, deadline, v, r, s } = await loadFixture(
+        computePermitSignature
+      );
+      const [owner] = await ethers.getSigners();
+
+      await technoStore.addProduct(product, quantity, price);
+      await technoStore.buyProduct(0, amount, deadline, v, r, s);
+      expect(await technoStore.refundProduct(0))
+        .to.emit(technoStore, "TechnoStore__ProductRefunded")
         .withArgs(product, owner.address);
     });
   });
