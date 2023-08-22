@@ -12,8 +12,8 @@ contract Token is ERC20Permit {
         );
 
     constructor()
-        ERC20Permit("LimeTechno Store")
-        ERC20("LimeTechno Store", "LTTK")
+        ERC20Permit("LimeTechno Store Token")
+        ERC20("LimeTechno Store Token", "LTSK")
     {
         _mint(_msgSender(), 10000);
     }

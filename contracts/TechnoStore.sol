@@ -5,44 +5,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 
-/*
-
-You challenge is to create the following smart contract:
-
-Your Contract
-Using Remix/Hardhat develop a contract for a TechnoLime Store.
-
-______________________________________________________________________
-
-- The administrator (owner) of the store should be able to add new products and the quantity of them.
-Това е ясно. Направил си го. Можеш да сложиш един modifier за проверка валидността на данните.
-
-- The administrator should not be able to add the same product twice, just quantity.
-Това си го направил. Нямам забележки
-
-- Buyers (clients) should be able to see the available products and buy them by their id.
-Подаваш ID, откъде го взимаш този customer?  Не ти трябва според мен да пазиш нов struct за customer. Можеш да решиш тази задача само с 2 мапинга (единия вложен). Помисли за оптимизация и дали ти трябва struct-a Customer.
-
-
-- Buyers should be able to return products if they are not satisfied (within a certain period in blocktime: 100 blocks).
-Доволен съм. Просто като помислиш по горния коментар и се отървеш от Customer struct-a, ще стане по-чисто.
-
-- A client cannot buy the same product more than one time.
-Доволен съм. Същото като горе.
-
-- The clients should not be able to buy a product more times than the quantity in the store unless a product is returned or added by the administrator (owner)
-Доволен съм, НО защо сетваш AMOUNT = 1? AMOUNT-a можеш да го сетваш като добавяш продукт. Не разбирам защо ти е това 
-
-uint constant AMOUNT = 1;
-
-- Everyone should be able to see the addresses of all clients that have ever bought a given product.
-Тук ти трябва 1 гетер. Ти си написал бая гетери. Помисли дали ти трябват? Можеш да ползваш default-ното поведение на solidity s public variables. 
-
-*/
-
-interface IERC20P is IERC20, IERC20Permit {
-
-}
+interface IERC20P is IERC20, IERC20Permit {}
 
 library Library {
     struct Product {
@@ -50,7 +13,7 @@ library Library {
         mapping(string => uint) priceOf;
         mapping(string => address[]) buyers;
         // --------------------------------------------------
-        // product: string -> customer: address -> timestamp: uint
+        // product: string -> customer: address -> timestamp/blockNumber: uint
         mapping(string => mapping(address => uint)) boughtAt;
     }
 
@@ -61,8 +24,14 @@ library Library {
         uint amount,
         uint price
     ) public {
-        // Check the price(in tokens) - if it is > 0, then the product has already been added
-        if (product.priceOf[_product] > 0) {
+        if (price == 0 || amount == 0) {
+            revert("Library__InvalidInputs");
+        }
+
+        if (
+            product.priceOf[_product] > 0
+        ) // Check the price(in tokens) - if it is > 0, then the product has already been added
+        {
             product.quantityOfProduct[_product] += amount;
         } else {
             product.quantityOfProduct[_product] = amount;
@@ -98,7 +67,7 @@ library Library {
         token.permit(
             msg.sender,
             address(this),
-            amount, // amount >= product.priceOf[_product],
+            amount, // amount >= product.priceOf[_product], else the tx reverts
             deadline,
             v,
             r,
