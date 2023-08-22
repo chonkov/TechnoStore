@@ -8,6 +8,8 @@ const { getPermitSignature } = require("../utils/getPermitSignature");
 const product = "Keyboard";
 const quantity = 10;
 const price = 50;
+const amount = 50;
+const deadline = 2000000000;
 
 describe("TechnoStore", function () {
   async function deployERC20() {
@@ -20,12 +22,10 @@ describe("TechnoStore", function () {
     expect(await token.balanceOf(owner.address)).to.equal(9000);
     expect(await token.balanceOf(other[0].address)).to.equal(1000);
 
-    return { token, owner, other };
+    return { token };
   }
 
   async function deployLibrary() {
-    const [owner] = await ethers.getSigners();
-
     const Library = await ethers.getContractFactory("Library");
     const library = await Library.deploy();
 
@@ -48,11 +48,10 @@ describe("TechnoStore", function () {
   }
 
   async function computePermitSignature() {
-    const { token, owner } = await loadFixture(deployERC20);
+    const { token } = await loadFixture(deployERC20);
     const { technoStore } = await loadFixture(deployTechnoStore);
+    const [owner] = await ethers.getSigners(1);
 
-    const amount = 100;
-    const deadline = 2000000000;
     const signature = await getPermitSignature(
       owner,
       token,
@@ -65,13 +64,14 @@ describe("TechnoStore", function () {
     const r = "0x" + signature.slice(2, 66);
     const s = "0x" + signature.slice(66, 130);
 
-    return { amount, deadline, signature, v, r, s };
+    return { v, r, s };
   }
 
   describe("Deployment", function () {
     it("Should set the right owner & token contract", async function () {
-      const { token, owner } = await loadFixture(deployERC20);
+      const { token } = await loadFixture(deployERC20);
       const { technoStore } = await loadFixture(deployTechnoStore);
+      const [owner] = await ethers.getSigners(1);
 
       expect(await technoStore.owner()).to.equal(owner.address);
       expect(await technoStore.token()).to.equal(token.target);
@@ -110,9 +110,20 @@ describe("TechnoStore", function () {
       expect(await technoStore.getQuantityOf(product)).to.equal(quantity * 2);
     });
 
+    it("Should revert, when the inputs are invalid", async function () {
+      const { technoStore } = await loadFixture(deployTechnoStore);
+
+      await expect(
+        technoStore.addProduct(product, 0, price)
+      ).to.be.revertedWith("Library__InvalidInputs");
+      await expect(
+        technoStore.addProduct(product, quantity, 0)
+      ).to.be.revertedWith("Library__InvalidInputs");
+    });
+
     it("Should revert, when the NOT the owner calls it", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
-      const [owner, ...other] = await ethers.getSigners();
+      const [, ...other] = await ethers.getSigners();
 
       await expect(
         technoStore.connect(other[0]).addProduct("Laptop", 5, 100)
@@ -131,9 +142,7 @@ describe("TechnoStore", function () {
   describe("Buying products", function () {
     it("Should revert, when the product, accessed with via index, does not exist", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
-      const { amount, deadline, v, r, s } = await loadFixture(
-        computePermitSignature
-      );
+      const { v, r, s } = await loadFixture(computePermitSignature);
 
       const [, ...other] = await ethers.getSigners();
 
@@ -144,13 +153,12 @@ describe("TechnoStore", function () {
 
     it("Should revert, when there is insufficient amount of the desired product", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
-      const { amount, deadline, v, r, s } = await loadFixture(
-        computePermitSignature
-      );
+      const { v, r, s } = await loadFixture(computePermitSignature);
 
       const [, ...other] = await ethers.getSigners();
 
-      await technoStore.addProduct(product, 0, price);
+      await technoStore.addProduct(product, 1, price);
+      await technoStore.buyProduct(0, amount, deadline, v, r, s);
       expect(await technoStore.getAmountOfProducts()).to.equal(1);
       expect(await technoStore.getQuantityOf(product)).to.equal(0);
 
@@ -160,11 +168,10 @@ describe("TechnoStore", function () {
     });
 
     it("Should not revert, when an address with enough tokens wants to buy a product", async function () {
-      const { token, owner } = await loadFixture(deployERC20);
+      const { token } = await loadFixture(deployERC20);
       const { technoStore } = await loadFixture(deployTechnoStore);
-      const { amount, deadline, v, r, s } = await loadFixture(
-        computePermitSignature
-      );
+      const { v, r, s } = await loadFixture(computePermitSignature);
+      const [owner] = await ethers.getSigners(1);
 
       let tx = await technoStore.addProduct(product, quantity, price);
       await tx.wait();
@@ -193,9 +200,7 @@ describe("TechnoStore", function () {
 
     it("Should revert, when a customer tries to buy a product more than once", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
-      const { amount, deadline, v, r, s } = await loadFixture(
-        computePermitSignature
-      );
+      const { v, r, s } = await loadFixture(computePermitSignature);
 
       await technoStore.addProduct(product, quantity, price);
       await technoStore.buyProduct(0, amount, deadline, v, r, s);
@@ -207,9 +212,7 @@ describe("TechnoStore", function () {
 
     it("Should emit an event, when a product is bought", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
-      const { amount, deadline, v, r, s } = await loadFixture(
-        computePermitSignature
-      );
+      const { v, r, s } = await loadFixture(computePermitSignature);
       const [owner] = await ethers.getSigners(1);
 
       await technoStore.addProduct(product, quantity, price);
@@ -223,9 +226,6 @@ describe("TechnoStore", function () {
   describe("Refunding products", function () {
     it("Should revert, when customer has not bought the product", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
-      const { amount, deadline, v, r, s } = await loadFixture(
-        computePermitSignature
-      );
 
       await technoStore.addProduct(product, quantity, price);
       await expect(technoStore.refundProduct(0)).to.be.revertedWith(
@@ -235,9 +235,7 @@ describe("TechnoStore", function () {
 
     it("Should revert, if the refund has expired", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
-      const { amount, deadline, v, r, s } = await loadFixture(
-        computePermitSignature
-      );
+      const { v, r, s } = await loadFixture(computePermitSignature);
 
       await technoStore.addProduct(product, quantity, price);
       await technoStore.buyProduct(0, amount, deadline, v, r, s);
@@ -250,21 +248,32 @@ describe("TechnoStore", function () {
     });
 
     it("Should successfully return 80% of the initial price to, when there is insufficient amount of the desired product", async function () {
+      const { token } = await loadFixture(deployERC20);
       const { technoStore } = await loadFixture(deployTechnoStore);
-      const { amount, deadline, v, r, s } = await loadFixture(
-        computePermitSignature
-      );
+      const { v, r, s } = await loadFixture(computePermitSignature);
+      const [owner] = await ethers.getSigners(1);
+
+      const initBalance = await token.balanceOf(owner.address);
 
       await technoStore.addProduct(product, quantity, price);
       await technoStore.buyProduct(0, amount, deadline, v, r, s);
       await expect(technoStore.refundProduct(0)).to.not.be.reverted;
+
+      expect(await token.balanceOf(owner.address)).to.equal(
+        initBalance - ethers.toBigInt(amount / 5)
+      );
+      expect(await token.balanceOf(technoStore.target)).to.equal(amount / 5);
+      expect(await technoStore.getQuantityOf(product)).to.equal(quantity);
+      expect(await technoStore.boughtAt(product, owner.address)).to.equal(0);
+      expect((await technoStore.getBuyersOf(product))[0]).to.equal(
+        owner.address
+      );
+      expect((await technoStore.getBuyersOf(product)).length).to.equal(1);
     });
 
     it("Should emit an event, if a refund is completed", async function () {
       const { technoStore } = await loadFixture(deployTechnoStore);
-      const { amount, deadline, v, r, s } = await loadFixture(
-        computePermitSignature
-      );
+      const { v, r, s } = await loadFixture(computePermitSignature);
       const [owner] = await ethers.getSigners();
 
       await technoStore.addProduct(product, quantity, price);
