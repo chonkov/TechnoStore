@@ -5,8 +5,20 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 
-interface IERC20P is IERC20, IERC20Permit {}
+/**
+ * @title IERC20Permit interface
+ * @author Georgi Chonkov
+ * @notice You can use this interface for interacting with ERC20Permit tokens
+ */
+interface IERC20P is IERC20, IERC20Permit {
 
+}
+
+/**
+ * @title Implementation/Library contract
+ * @author Georgi Chonkov
+ * @notice The library implements all methods underneath the `TechnoStore` contract
+ */
 library Library {
     struct Product {
         mapping(string => uint) quantityOfProduct;
@@ -17,6 +29,15 @@ library Library {
         mapping(string => mapping(address => uint)) boughtAt;
     }
 
+    /**
+     * @dev Verify inputs and update the storage of the calling contract
+     * @notice Add new product to the store
+     * @param product - storage reference to the product struct
+     * @param products - storage reference to the products array
+     * @param _product - name of new product to be added
+     * @param amount - the quantity of the product
+     * @param price - the price of the product
+     */
     function addProduct(
         Product storage product,
         string[] storage products,
@@ -40,6 +61,19 @@ library Library {
         }
     }
 
+    /**
+     * @dev Validate that a purchase can be made and update the storage
+     * @notice Allow an address to buy a product
+     * @param product - storage reference to the product struct
+     * @param _product - name of new product to be added
+     * @param _customer - address of the customer willing to buy a product
+     * @param token - interface of the token, with which permits can be made
+     * @param amount - the amount of tokens to be transferred
+     * @param deadline - the last valid timestamp for the approval of tokens
+     * @param v - last byte of the signature
+     * @param r - first 32 bytes of the signature
+     * @param s - second 32 bytes of the signature
+     */
     function buyProduct(
         Product storage product,
         string calldata _product,
@@ -76,6 +110,14 @@ library Library {
         token.transferFrom(msg.sender, address(this), amount);
     }
 
+    /**
+     * @dev Validate that a refund can be made and update the storage
+     * @notice Allow an address/customer to refund a product
+     * @param product - storage reference to the product struct
+     * @param _product - name of new product to be refunded
+     * @param _customer - address of the customer willing to refund a product
+     * @param token - interface of the token, through which the transfer of tokens (refund) can be made
+     */
     function refundProduct(
         Product storage product,
         string calldata _product,
@@ -96,11 +138,21 @@ library Library {
         token.transfer(msg.sender, _refund(product.priceOf[_product]));
     }
 
-    // Calculates refund - 80% of the price of the given product
+    /**
+     * @dev Calculates refund - 80% of the price of the given product
+     * @param price - tokens, with which the calculcation will be made
+     * @return refund
+     */
     function _refund(uint price) private pure returns (uint) {
         return (price * 4) / 5;
     }
 
+    /**
+     * @dev Returns quantity of a product
+     * @param product - storage reference to the product struct
+     * @param _product - name of product
+     * @return quantity
+     */
     function getQuantityOf(
         Product storage product,
         string calldata _product
@@ -108,6 +160,12 @@ library Library {
         return product.quantityOfProduct[_product];
     }
 
+    /**
+     * @dev Returns price of a product
+     * @param product - storage reference to the product struct
+     * @param _product - name of product
+     * @return price
+     */
     function getPriceOf(
         Product storage product,
         string calldata _product
@@ -115,6 +173,12 @@ library Library {
         return product.priceOf[_product];
     }
 
+    /**
+     * @dev Returns an array of all addresses that have ever bought a given product
+     * @param product - storage reference to the product struct
+     * @param _product - name of product
+     * @return buyers
+     */
     function getBuyersOf(
         Product storage product,
         string calldata _product
@@ -122,6 +186,13 @@ library Library {
         return product.buyers[_product];
     }
 
+    /**
+     * @dev Returns the exact time a product has been bought
+     * @param product - storage reference to the product struct
+     * @param _product - name of product
+     * @param _customer - address of a customer
+     * @return timestamp
+     */
     function boughtAtTimestamp(
         Product storage product,
         string calldata _product,
